@@ -39,6 +39,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.EditLocationAlt
 import androidx.compose.material.icons.filled.FlashAuto
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
@@ -87,6 +88,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.gpsphoto.app.data.DeviceLocation
+import com.gpsphoto.app.ui.PlaceNameDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -193,6 +195,9 @@ fun CameraScreen(onSaved: (Boolean) -> Unit, onOpenPhoto: (Long) -> Unit, onOpen
             delay(5_000)
         }
     }
+    val savedPlaces by vm.savedPlaces.collectAsStateWithLifecycle()
+    val placeHere = remember(info.location, savedPlaces) { vm.placeHere(info.location) }
+    var namingPlace by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     val shutterFlash = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
@@ -232,8 +237,8 @@ fun CameraScreen(onSaved: (Boolean) -> Unit, onOpenPhoto: (Long) -> Unit, onOpen
 
             val widthPx = with(LocalDensity.current) { maxWidth.roundToPx() }
             val minute = now / 60_000
-            val stamp = remember(info, settings, minute, widthPx) {
-                StampRenderer.render(widthPx, stampContent(info, settings, now), settings.template).asImageBitmap()
+            val stamp = remember(info, settings, minute, widthPx, placeHere) {
+                StampRenderer.render(widthPx, stampContent(info, settings, now, placeHere), settings.template).asImageBitmap()
             }
             Image(
                 bitmap = stamp,
@@ -252,6 +257,9 @@ fun CameraScreen(onSaved: (Boolean) -> Unit, onOpenPhoto: (Long) -> Unit, onOpen
                     }
                     info.location == null -> StatusPill("Getting GPS fix…", null, null)
                     else -> StatusPill("GPS ±${info.location!!.accuracy.toInt()} m", null, null)
+                }
+                if (info.location != null) {
+                    PlaceButton(placeHere?.name, Modifier.padding(top = 8.dp)) { namingPlace = true }
                 }
             }
 
@@ -325,6 +333,22 @@ fun CameraScreen(onSaved: (Boolean) -> Unit, onOpenPhoto: (Long) -> Unit, onOpen
     }
 
     if (showSettings) StampSettingsSheet(settings, vm::updateSettings) { showSettings = false }
+    if (namingPlace) {
+        val existing = placeHere
+        PlaceNameDialog(
+            existingName = existing?.name,
+            suggestion = info.place,
+            onDismiss = { namingPlace = false },
+            onRemove = {
+                existing?.let(vm::removePlace)
+                namingPlace = false
+            },
+            onSave = { name ->
+                vm.namePlace(existing, name)
+                namingPlace = false
+            },
+        )
+    }
 }
 
 @Composable
@@ -343,6 +367,27 @@ private fun TemplateMenu(current: Template, onPick: (Template) -> Unit) {
             Template.entries.forEach { t ->
                 DropdownMenuItem(text = { Text(t.label) }, onClick = { onPick(t); open = false })
             }
+        }
+    }
+}
+
+/** Shows the user's name for this spot, or offers to name it. */
+@Composable
+private fun PlaceButton(name: String?, modifier: Modifier, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = if (name != null) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.55f),
+        contentColor = if (name != null) MaterialTheme.colorScheme.onPrimary else Color.White,
+        modifier = modifier,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+            Icon(Icons.Default.EditLocationAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+            Text(
+                if (name != null) "$name · Rename" else "Name this place",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(start = 6.dp),
+            )
         }
     }
 }

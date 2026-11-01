@@ -11,6 +11,8 @@ import com.gpsphoto.app.data.PhotoFilter
 import com.gpsphoto.app.data.PhotoTag
 import com.gpsphoto.app.data.PhotoWithTags
 import com.gpsphoto.app.data.Place
+import com.gpsphoto.app.data.SavedPlace
+import com.gpsphoto.app.data.applySavedPlaces
 import com.gpsphoto.app.data.SortBy
 import com.gpsphoto.app.data.groupPhotos
 import com.gpsphoto.app.data.matches
@@ -51,8 +53,13 @@ class PhotoViewModel(app: Application) : AndroidViewModel(app) {
     val syncing = MutableStateFlow(false)
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
 
-    private val all: StateFlow<List<PhotoWithTags>?> = dao.observeAll()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val savedPlaces: StateFlow<List<SavedPlace>> = dao.observePlaces()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Every photo, with named places applied, so all screens show the same names. */
+    private val all: StateFlow<List<PhotoWithTags>?> = combine(dao.observeAll(), dao.observePlaces()) { photos, places ->
+        applySavedPlaces(photos, places)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val loaded = all.map { it != null }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val byId = all.map { list -> list.orEmpty().associateBy { it.photo.id } }
@@ -99,6 +106,24 @@ class PhotoViewModel(app: Application) : AndroidViewModel(app) {
                 syncing.value = false
                 syncLock.unlock()
             }
+        }
+    }
+
+    /** Names a place (or renames [existing]). Photos within 50 m of it use the name. */
+    fun namePlace(existing: SavedPlace?, name: String, lat: Double, lng: Double) {
+        viewModelScope.launch {
+            val clean = name.trim()
+            dao.upsertPlace(existing?.copy(name = clean) ?: SavedPlace(name = clean, lat = lat, lng = lng))
+            placeFilter.value = null
+            messages.emit("Place saved as \"$clean\"")
+        }
+    }
+
+    fun removePlace(place: SavedPlace) {
+        viewModelScope.launch {
+            dao.deletePlace(place.id)
+            placeFilter.value = null
+            messages.emit("Removed the name \"${place.name}\"")
         }
     }
 

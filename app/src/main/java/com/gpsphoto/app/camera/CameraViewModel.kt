@@ -12,9 +12,15 @@ import androidx.camera.core.ImageProxy
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.gpsphoto.app.data.PhotoDatabase
 import com.gpsphoto.app.data.PhotoFiles
+import com.gpsphoto.app.data.SavedPlace
+import com.gpsphoto.app.data.nearestPlace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,9 +39,11 @@ data class LiveInfo(
     val map: Bitmap? = null,
 )
 
-fun stampContent(info: LiveInfo, s: StampSettings, now: Long): StampContent {
+/** [named] is the user's own name for this spot (see [SavedPlace]); it replaces the looked-up place name. */
+fun stampContent(info: LiveInfo, s: StampSettings, now: Long, named: SavedPlace? = null): StampContent {
     val loc = info.location
-    val title = info.place
+    val title = named?.name
+        ?: info.place
         ?: loc?.let { formatCoords(it.latitude, it.longitude, s.coordFormat) }
         ?: "Waiting for GPS…"
     val lines = buildList {
@@ -76,6 +84,25 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     val info = MutableStateFlow(LiveInfo())
     val busy = MutableStateFlow(false)
     val lastPhoto = MutableStateFlow<Uri?>(null)
+    private val dao = PhotoDatabase.get(app).photoDao()
+    val savedPlaces: StateFlow<List<SavedPlace>> = dao.observePlaces()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** The named place covering the current GPS fix, if any. */
+    fun placeHere(loc: Location? = info.value.location): SavedPlace? =
+        loc?.let { nearestPlace(it.latitude, it.longitude, savedPlaces.value) }
+
+    /** Names the spot the phone is at now, or renames [existing]. */
+    fun namePlace(existing: SavedPlace?, name: String) {
+        val loc = info.value.location ?: return
+        viewModelScope.launch {
+            dao.upsertPlace(existing?.copy(name = name) ?: SavedPlace(name = name, lat = loc.latitude, lng = loc.longitude))
+        }
+    }
+
+    fun removePlace(place: SavedPlace) {
+        viewModelScope.launch { dao.deletePlace(place.id) }
+    }
 
     private val place = Refresher(30f, 60 * 60_000L)
     private val map = Refresher(30f, 24 * 60 * 60_000L)
@@ -143,7 +170,7 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         val takenAt = System.currentTimeMillis()
         val s = settings.value
         val snapshot = info.value
-        val content = stampContent(snapshot, s, takenAt)
+        val content = stampContent(snapshot, s, takenAt, placeHere(snapshot.location))
         val context = getApplication<Application>()
         imageCapture.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {

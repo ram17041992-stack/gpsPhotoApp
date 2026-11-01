@@ -7,7 +7,12 @@ import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** Pure search / sort / group logic, kept free of Android types so it is unit-testable. */
 
@@ -131,3 +136,31 @@ fun placesOf(photos: List<PhotoWithTags>): List<Place> = photos
             photos = list,
         )
     }
+
+/** Great-circle distance in metres. */
+fun distanceM(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLng = Math.toRadians(lng2 - lng1)
+    val a = sin(dLat / 2).pow(2) + cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLng / 2).pow(2)
+    return 6_371_000.0 * 2 * atan2(sqrt(a), sqrt(1 - a))
+}
+
+/** The closest named place whose radius covers the point, if any. */
+fun nearestPlace(lat: Double, lng: Double, places: List<SavedPlace>): SavedPlace? = places
+    .map { it to distanceM(lat, lng, it.lat, it.lng) }
+    .filter { (place, d) -> d <= place.radiusM }
+    .minByOrNull { it.second }?.first
+
+/** Key used instead of the grid cell for photos inside a named place, so they share one group and map pin. */
+fun savedPlaceKey(place: SavedPlace) = "saved:${place.id}"
+
+/** Photos inside a named place take its name and are grouped together. Nothing is written to the database. */
+fun applySavedPlaces(photos: List<PhotoWithTags>, places: List<SavedPlace>): List<PhotoWithTags> {
+    if (places.isEmpty()) return photos
+    return photos.map { p ->
+        val lat = p.photo.lat
+        val lng = p.photo.lng
+        val place = if (lat != null && lng != null) nearestPlace(lat, lng, places) else null
+        if (place == null) p else p.copy(photo = p.photo.copy(placeName = place.name, cellKey = savedPlaceKey(place)))
+    }
+}

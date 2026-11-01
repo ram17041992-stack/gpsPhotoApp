@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.EditLocationAlt
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.ZoomOutMap
@@ -33,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -60,6 +62,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.gpsphoto.app.data.Place
 import com.gpsphoto.app.data.hasLocation
+import com.gpsphoto.app.data.savedPlaceKey
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
@@ -79,6 +82,8 @@ fun MapScreen(vm: PhotoViewModel, onOpen: (Long) -> Unit, onShowInGallery: (Plac
     val withoutLocation = remember(visible) { visible.count { !it.hasLocation } }
     var selectedKey by rememberSaveable { mutableStateOf<String?>(null) }
     val selected = places.find { it.key == selectedKey }
+    val savedPlaces by vm.savedPlaces.collectAsStateWithLifecycle()
+    var naming by remember { mutableStateOf<Place?>(null) }
 
     val context = LocalContext.current
     val mapView = remember { createMapView(context) }
@@ -167,11 +172,32 @@ fun MapScreen(vm: PhotoViewModel, onOpen: (Long) -> Unit, onShowInGallery: (Plac
             PlaceCard(
                 place = place,
                 onOpen = onOpen,
+                isNamed = savedPlaces.any { savedPlaceKey(it) == place.key },
                 onShowInGallery = { onShowInGallery(place) },
+                onName = { naming = place },
                 onClose = { selectedKey = null },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+    }
+
+    naming?.let { place ->
+        val existing = savedPlaces.find { savedPlaceKey(it) == place.key }
+        PlaceNameDialog(
+            existingName = existing?.name,
+            suggestion = place.name,
+            onDismiss = { naming = null },
+            onRemove = {
+                existing?.let(vm::removePlace)
+                naming = null
+                selectedKey = null
+            },
+            onSave = { name ->
+                vm.namePlace(existing, name, place.lat, place.lng)
+                naming = null
+                selectedKey = null
+            },
+        )
     }
 }
 
@@ -186,7 +212,9 @@ private fun Pill(text: String) {
 private fun PlaceCard(
     place: Place,
     onOpen: (Long) -> Unit,
+    isNamed: Boolean,
     onShowInGallery: () -> Unit,
+    onName: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier,
 ) {
@@ -222,10 +250,17 @@ private fun PlaceCard(
                     )
                 }
             }
-            FilledTonalButton(onClick = onShowInGallery, modifier = Modifier.padding(horizontal = 16.dp)) {
-                Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Show in gallery")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 16.dp)) {
+                FilledTonalButton(onClick = onShowInGallery) {
+                    Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Show in gallery")
+                }
+                OutlinedButton(onClick = onName) {
+                    Icon(Icons.Default.EditLocationAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (isNamed) "Rename" else "Name place")
+                }
             }
         }
     }

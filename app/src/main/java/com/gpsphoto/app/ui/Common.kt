@@ -162,3 +162,42 @@ fun EditDetailsDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
+
+/** Name, rename or un-name a place. [existingName] is null when the place has no name yet. */
+@Composable
+fun PlaceNameDialog(
+    existingName: String?,
+    suggestion: String?,
+    onDismiss: () -> Unit,
+    onRemove: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var text by remember { mutableStateOf(existingName ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existingName == null) "Name this place" else "Rename place") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.take(60) },
+                    label = { Text("Place name") },
+                    placeholder = { Text(suggestion ?: "e.g. Home, Site A, Office") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Every photo taken within 50 m of here, now or later, gets this name, so they're easy to find.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                if (existingName != null) {
+                    TextButton(onClick = onRemove, modifier = Modifier.padding(top = 4.dp)) { Text("Remove name") }
+                }
+            }
+        },
+        confirmButton = { TextButton(enabled = text.isNotBlank(), onClick = { onSave(text.trim()) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}

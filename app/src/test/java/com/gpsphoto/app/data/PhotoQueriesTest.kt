@@ -80,4 +80,26 @@ class PhotoQueriesTest {
     @Test fun parsesTagsWithoutDuplicates() {
         assertEquals(listOf("Beach", "family"), parseTags(" Beach, family,, beach "))
     }
+
+    @Test fun distanceIsInMetres() {
+        // 0.001° of latitude ≈ 111 m.
+        assertEquals(111.2, distanceM(-6.0, 39.0, -6.001, 39.0), 0.5)
+    }
+
+    @Test fun namedPlaceCoversPhotosWithin50m() {
+        val site = SavedPlace(id = 7, name = "Site A", lat = -6.7924, lng = 39.2083)
+        assertEquals(site, nearestPlace(-6.7927, 39.2083, listOf(site)))      // ~33 m away
+        assertEquals(null, nearestPlace(-6.7930, 39.2083, listOf(site)))      // ~67 m away
+        val named = applySavedPlaces(all, listOf(site))
+        assertEquals("Site A", named[0].photo.placeName)                       // beach, same spot
+        assertEquals("Kivukoni, Dar es Salaam", named[1].photo.placeName)      // beach2, ~100 m away
+        assertEquals(savedPlaceKey(site), named[0].photo.cellKey)
+        assertEquals(listOf(1L), named.filter { it.matches(PhotoFilter(query = "site a"), dar) }.map { it.photo.id })
+    }
+
+    @Test fun nearestNamedPlaceWins() {
+        val a = SavedPlace(id = 1, name = "Gate", lat = -6.79240, lng = 39.2083)
+        val b = SavedPlace(id = 2, name = "Office", lat = -6.79270, lng = 39.2083)
+        assertEquals("Office", nearestPlace(-6.79262, 39.2083, listOf(a, b))?.name)
+    }
 }

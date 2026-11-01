@@ -15,6 +15,8 @@ import androidx.room.Relation
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -57,6 +59,16 @@ data class PhotoTag(val photoId: Long, val tag: String)
 data class PhotoWithTags(
     @Embedded val photo: Photo,
     @Relation(parentColumn = "id", entityColumn = "photoId") val tagRows: List<PhotoTag>,
+)
+
+/** A place the user named. Photos within [radiusM] metres of it use this name. */
+@Entity(tableName = "saved_place")
+data class SavedPlace(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val lat: Double,
+    val lng: Double,
+    val radiusM: Double = 50.0,
 )
 
 data class CellPoint(val cellKey: String, val lat: Double, val lng: Double)
@@ -105,6 +117,15 @@ abstract class PhotoDao {
     @Query("DELETE FROM photo_tag WHERE photoId = :id")
     abstract suspend fun clearTags(id: Long)
 
+    @Query("SELECT * FROM saved_place ORDER BY name COLLATE NOCASE")
+    abstract fun observePlaces(): Flow<List<SavedPlace>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertPlace(place: SavedPlace)
+
+    @Query("DELETE FROM saved_place WHERE id = :id")
+    abstract suspend fun deletePlace(id: Long)
+
     // SQLite allows at most 999 bound variables, so IN-lists are chunked.
     @Transaction
     open suspend fun deleteAll(ids: List<Long>) = ids.chunked(500).forEach { deleteIds(it) }
@@ -124,7 +145,17 @@ abstract class PhotoDao {
     }
 }
 
-@Database(entities = [Photo::class, PhotoTag::class], version = 1)
+/** v2 adds named places. Existing photos, names and tags are kept. */
+private val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `saved_place` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `lat` REAL NOT NULL, `lng` REAL NOT NULL, `radiusM` REAL NOT NULL)",
+        )
+    }
+}
+
+@Database(entities = [Photo::class, PhotoTag::class, SavedPlace::class], version = 2)
 abstract class PhotoDatabase : RoomDatabase() {
     abstract fun photoDao(): PhotoDao
 
@@ -133,6 +164,7 @@ abstract class PhotoDatabase : RoomDatabase() {
 
         fun get(context: Context): PhotoDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, PhotoDatabase::class.java, "photos.db")
+                .addMigrations(MIGRATION_1_2)
                 .build().also { instance = it }
         }
     }

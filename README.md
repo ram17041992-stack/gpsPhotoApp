@@ -5,6 +5,7 @@ See, organise and find your photos by **where** and **when** they were taken.
 | Screen | What you can do |
 |---|---|
 | **Camera** (opens first) | Live GPS camera with a stamp on every photo: mini map (Street or Satellite), place and full address, latitude/longitude (decimal or °′″), date and time with GMT offset, weather, altitude and your own note. Choose **Advanced**, **Classic** or **Minimal** templates and the stamp fields in settings. Flash, front/back camera, tap the thumbnail to open the last photo. |
+| **Named places** | Tap **Name this place** on the camera (or **Name place** on a map pin) and call it e.g. "Site A". Every photo within 50 m, old or new, then shows that name on its stamp, in Photos groups, on the map and in search. Rename or remove it the same way. |
 | **Photos** | Thumbnail grid grouped by month, place, category or tag. Search by place, name, tag, category or date (e.g. `march 2026`, `2026-03-14`). Filter by "Has location" or a date range. Long-press to select several photos, then **Tag**, **Rename** (numbered in date order) or set a **Category**. |
 | **Map** | Every place where you took photos is a numbered pin. Tap one to see its photos, open one, or **Show in gallery** to filter the grid to that place. |
 | **Photo** | Large view (swipe for next), date in your phone's time zone, place name, GPS, file details. **Edit details** (name, description, category, tags), **Show on map**, **Save renamed copy**. |
