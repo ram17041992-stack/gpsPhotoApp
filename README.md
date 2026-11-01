@@ -25,8 +25,8 @@ Requirements: Android Studio (Ladybug or newer) or JDK 17 + Android SDK 35.
 ./gradlew assembleDebug
 ```
 
-The APK is at `app/build/outputs/apk/debug/app-debug.apk`. When you push to GitHub, the included
-workflow (`.github/workflows/build.yml`) runs the tests and uploads the APK as a build artifact.
+The APK is at `app/build/outputs/apk/debug/app-debug.apk`. On GitHub, every push to `main` runs the
+tests and publishes `GpsPhotos.apk` on the **Releases** page under "latest".
 
 Minimum Android version: 10 (API 29).
 
