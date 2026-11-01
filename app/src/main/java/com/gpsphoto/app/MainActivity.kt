@@ -1,7 +1,6 @@
 package com.gpsphoto.app
 
 import android.Manifest
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -26,7 +25,6 @@ import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -41,7 +39,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,13 +57,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.gpsphoto.app.data.PhotoFiles
+import com.gpsphoto.app.camera.CameraScreen
+import com.gpsphoto.app.camera.cameraPermissions
 import com.gpsphoto.app.ui.AppTheme
 import com.gpsphoto.app.ui.DetailScreen
 import com.gpsphoto.app.ui.GalleryScreen
 import com.gpsphoto.app.ui.MapScreen
 import com.gpsphoto.app.ui.PhotoViewModel
 
+private const val CAMERA = "camera"
 private const val GALLERY = "gallery"
 private const val MAP = "map"
 private const val PHOTO = "photo/{id}"
@@ -76,7 +75,7 @@ private val mediaPermissions = arrayOf(
     else Manifest.permission.READ_EXTERNAL_STORAGE,
     Manifest.permission.ACCESS_MEDIA_LOCATION,
 )
-private val locationPermissions = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+private val firstLaunchPermissions = mediaPermissions + cameraPermissions
 
 private fun hasMediaAccess(context: Context) =
     context.checkSelfPermission(mediaPermissions[0]) == PackageManager.PERMISSION_GRANTED
@@ -97,7 +96,7 @@ private fun AppRoot(vm: PhotoViewModel = viewModel()) {
         hasAccess = hasMediaAccess(context)
         if (hasAccess) vm.sync()
     }
-    LaunchedEffect(Unit) { if (!hasAccess) askMedia.launch(mediaPermissions) }
+    LaunchedEffect(Unit) { if (!hasAccess) askMedia.launch(firstLaunchPermissions) }
     // Picks up photos taken or deleted while the app was in the background.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         hasAccess = hasMediaAccess(context)
@@ -107,43 +106,16 @@ private fun AppRoot(vm: PhotoViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
 
-    // Camera: ask for location (for the GPS tag), then open the phone's camera app.
-    var pendingCapture by rememberSaveable { mutableStateOf<String?>(null) }
-    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-        pendingCapture?.let { vm.onCaptured(Uri.parse(it), ok) }
-        pendingCapture = null
-    }
-    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        val uri = PhotoFiles.newCaptureUri(context) ?: return@rememberLauncherForActivityResult
-        pendingCapture = uri.toString()
-        try {
-            takePicture.launch(uri)
-        } catch (e: ActivityNotFoundException) {
-            PhotoFiles.discard(context, uri)
-            pendingCapture = null
-            vm.messages.tryEmit("No camera app found on this phone")
-        }
-    }
-
     val nav = rememberNavController()
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
-    val selection by vm.selection.collectAsStateWithLifecycle()
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbar) },
-        floatingActionButton = {
-            if (hasAccess && route == GALLERY && selection.isEmpty()) {
-                ExtendedFloatingActionButton(
-                    onClick = { askLocation.launch(locationPermissions) },
-                    icon = { Icon(Icons.Default.PhotoCamera, contentDescription = null) },
-                    text = { Text("Camera") },
-                )
-            }
-        },
         bottomBar = {
-            if (hasAccess && (route == GALLERY || route == MAP)) {
+            if (hasAccess && route in listOf(CAMERA, GALLERY, MAP)) {
                 NavigationBar {
+                    Tab(Icons.Default.PhotoCamera, "Camera", route == CAMERA) { nav.openTab(CAMERA) }
                     Tab(Icons.Default.PhotoLibrary, "Photos", route == GALLERY) { nav.openTab(GALLERY) }
                     Tab(Icons.Default.Map, "Map", route == MAP) { nav.openTab(MAP) }
                 }
@@ -154,7 +126,14 @@ private fun AppRoot(vm: PhotoViewModel = viewModel()) {
             PermissionPrompt(Modifier.padding(padding)) { askMedia.launch(mediaPermissions) }
             return@Scaffold
         }
-        NavHost(nav, startDestination = GALLERY, modifier = Modifier.padding(padding)) {
+        NavHost(nav, startDestination = CAMERA, modifier = Modifier.padding(padding)) {
+            composable(CAMERA) {
+                CameraScreen(
+                    onSaved = { ok -> if (ok) vm.sync() else vm.messages.tryEmit("Couldn't save the photo. Please try again.") },
+                    onOpenPhoto = { nav.navigate("photo/$it") },
+                    onOpenGallery = { nav.openTab(GALLERY) },
+                )
+            }
             composable(GALLERY) {
                 GalleryScreen(vm, onOpen = { nav.navigate("photo/$it") })
             }
@@ -183,9 +162,9 @@ private fun AppRoot(vm: PhotoViewModel = viewModel()) {
     }
 }
 
-/** Tabs share one back stack rooted at the gallery, so Back always returns to Photos. */
+/** Tabs share one back stack rooted at the camera, so Back always returns to it. */
 private fun NavController.openTab(route: String) = navigate(route) {
-    popUpTo(GALLERY)
+    popUpTo(CAMERA)
     launchSingleTop = true
 }
 

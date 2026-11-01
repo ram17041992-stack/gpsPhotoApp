@@ -1,10 +1,8 @@
 package com.gpsphoto.app.ui
 
 import android.app.Application
-import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.gpsphoto.app.data.DeviceLocation
 import com.gpsphoto.app.data.GroupBy
 import com.gpsphoto.app.data.MediaSync
 import com.gpsphoto.app.data.PhotoDatabase
@@ -101,20 +99,6 @@ class PhotoViewModel(app: Application) : AndroidViewModel(app) {
                 syncing.value = false
                 syncLock.unlock()
             }
-        }
-    }
-
-    fun onCaptured(uri: Uri, success: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val context = getApplication<Application>()
-            if (!success) {
-                PhotoFiles.discard(context, uri)
-                return@launch
-            }
-            val located = runCatching { PhotoFiles.ensureLocation(context, uri, DeviceLocation.current(context)) }
-                .getOrDefault(false)
-            messages.emit(if (located) "Photo saved with location" else "Photo saved without location. Turn on GPS for location tags.")
-            sync()
         }
     }
 
