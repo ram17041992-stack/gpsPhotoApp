@@ -21,10 +21,10 @@ tap() {
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
 
-saved_count() {
-  adb shell content query --uri content://media/external/images/media --projection _display_name \
-    --where "_display_name LIKE 'GPS_%'" 2>/dev/null | grep -c "Row:"
+list_saved() {
+  adb shell content query --uri content://media/external/images/media --projection _display_name:relative_path:_size 2>/dev/null | grep "GPS_"
 }
+saved_count() { list_saved | grep -c "GPS_"; }
 
 screen_text() { ui_dump; grep -o 'text="[^"]\+"' ui.xml | sort -u | tr '\n' ' '; echo; }
 
@@ -52,8 +52,10 @@ sleep 12
 offline=$(saved_count)
 echo "== Offline capture: saved photos $online -> $offline"
 echo "== Screen: $(screen_text)"
-adb shell content query --uri content://media/external/images/media --projection _display_name:relative_path:_size \
-  --where "_display_name LIKE 'GPS_%'"
+list_saved
+tap "Photos" || true
+sleep 6
+echo "== Photos tab: $(screen_text)"
 
 echo "== App process alive: $(adb shell pidof $PKG || echo NO)"
 echo "== Crash log:"

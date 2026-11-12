@@ -186,6 +186,7 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         val stamped = StampRenderer.stamp(photo, content, s.template)
                         lastPhoto.value = PhotoFiles.saveCapture(context, stamped, "$name.jpg", snapshot.location, takenAt, s.note)
+                        Log.i(TAG, "Saved $name.jpg ${stamped.width}x${stamped.height}, GPS ${if (snapshot.location != null) "yes" else "no"}")
                         stamped.recycle()
                     }.onFailure { Log.e(TAG, "Saving photo failed", it) }.isSuccess
                     busy.value = false
