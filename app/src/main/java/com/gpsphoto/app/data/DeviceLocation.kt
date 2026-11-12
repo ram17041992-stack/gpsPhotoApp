@@ -29,7 +29,8 @@ object DeviceLocation {
             @Deprecated("Deprecated in Java")
             override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
         }
-        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        // "fused" (Android 12+) combines GPS, Wi-Fi and cell for a faster first fix.
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, "fused")
             .filter { it in manager.allProviders }
         providers.mapNotNull { manager.getLastKnownLocation(it) }.maxByOrNull { it.time }?.let { trySend(it) }
         providers.forEach { manager.requestLocationUpdates(it, 2_000L, 0f, listener, Looper.getMainLooper()) }

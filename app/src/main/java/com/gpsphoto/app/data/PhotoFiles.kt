@@ -7,6 +7,7 @@ import android.location.Location
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.exifinterface.media.ExifInterface
+import java.io.File
 import java.io.InputStream
 import java.time.Instant
 import java.time.ZoneId
@@ -34,32 +35,36 @@ object PhotoFiles {
      * capture time (and its UTC offset) and the note written into EXIF. Returns the new Uri.
      */
     fun saveCapture(context: Context, bitmap: Bitmap, name: String, location: Location?, takenAt: Long, note: String): Uri {
-        val resolver = context.contentResolver
-        val target = requireNotNull(resolver.insert(collection, ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, name)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            put(MediaStore.Images.Media.RELATIVE_PATH, ALBUM)
-            put(MediaStore.Images.Media.DATE_TAKEN, takenAt)
-            put(MediaStore.Images.Media.IS_PENDING, 1)
-        })) { "Couldn't create the photo file" }
+        // EXIF is written to a private temp file first: editing it in place through MediaStore fails on some phones.
+        val temp = File.createTempFile("capture", ".jpg", context.cacheDir)
         try {
-            requireNotNull(resolver.openOutputStream(target)).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) }
-            requireNotNull(resolver.openFileDescriptor(target, "rw")).use { pfd ->
-                ExifInterface(pfd.fileDescriptor).apply {
-                    val time = Instant.ofEpochMilli(takenAt).atZone(ZoneId.systemDefault())
-                    setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, exifTime.format(time))
-                    setAttribute(ExifInterface.TAG_DATETIME, exifTime.format(time))
-                    setAttribute(ExifInterface.TAG_OFFSET_TIME_ORIGINAL, exifOffset.format(time))
-                    if (note.isNotBlank()) setAttribute(ExifInterface.TAG_IMAGE_DESCRIPTION, note)
-                    location?.let { setGpsInfo(it) }
-                    saveAttributes()
-                }
+            temp.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it)) { "JPEG encoding failed" } }
+            ExifInterface(temp.absolutePath).apply {
+                val time = Instant.ofEpochMilli(takenAt).atZone(ZoneId.systemDefault())
+                setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, exifTime.format(time))
+                setAttribute(ExifInterface.TAG_DATETIME, exifTime.format(time))
+                setAttribute(ExifInterface.TAG_OFFSET_TIME_ORIGINAL, exifOffset.format(time))
+                if (note.isNotBlank()) setAttribute(ExifInterface.TAG_IMAGE_DESCRIPTION, note)
+                location?.let { setGpsInfo(it) }
+                saveAttributes()
             }
-            resolver.update(target, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
-            return target
-        } catch (e: Exception) {
-            resolver.delete(target, null, null)
-            throw e
+            val resolver = context.contentResolver
+            val target = requireNotNull(resolver.insert(collection, ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                put(MediaStore.Images.Media.RELATIVE_PATH, ALBUM)
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            })) { "Couldn't create the photo file" }
+            try {
+                requireNotNull(resolver.openOutputStream(target)).use { out -> temp.inputStream().use { it.copyTo(out) } }
+                resolver.update(target, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+                return target
+            } catch (e: Exception) {
+                resolver.delete(target, null, null)
+                throw e
+            }
+        } finally {
+            temp.delete()
         }
     }
 

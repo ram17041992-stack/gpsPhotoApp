@@ -75,6 +75,8 @@ data class CellPoint(val cellKey: String, val lat: Double, val lng: Double)
 
 data class PhotoRef(val id: Long, val uri: String)
 
+data class NamedPoint(val placeName: String, val lat: Double, val lng: Double)
+
 @Dao
 abstract class PhotoDao {
     @Transaction
@@ -116,6 +118,13 @@ abstract class PhotoDao {
 
     @Query("DELETE FROM photo_tag WHERE photoId = :id")
     abstract suspend fun clearTags(id: Long)
+
+    /** Photos with a known place name inside a lat/lng box (for naming places while offline). */
+    @Query(
+        "SELECT placeName, lat, lng FROM photo WHERE placeName IS NOT NULL " +
+            "AND lat BETWEEN :minLat AND :maxLat AND lng BETWEEN :minLng AND :maxLng",
+    )
+    abstract suspend fun namedPhotosIn(minLat: Double, maxLat: Double, minLng: Double, maxLng: Double): List<NamedPoint>
 
     @Query("SELECT * FROM saved_place ORDER BY name COLLATE NOCASE")
     abstract fun observePlaces(): Flow<List<SavedPlace>>

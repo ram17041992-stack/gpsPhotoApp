@@ -11,7 +11,7 @@ ui_dump() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull 
 tap() {
   ui_dump
   local nums
-  nums=$(grep -o "content-desc=\"$1\"[^>]*bounds=\"[^\"]*\"" ui.xml | grep -o 'bounds="[^"]*"' | head -1 | grep -o '[0-9]\+')
+  nums=$(grep -o "\(content-desc\|text\)=\"$1\"[^>]*bounds=\"[^\"]*\"" ui.xml | grep -o 'bounds="[^"]*"' | head -1 | grep -o '[0-9]\+')
   if [ -z "$nums" ]; then
     echo "!! Could not find '$1' on screen. Visible labels:"
     grep -o 'content-desc="[^"]\+"\|text="[^"]\+"' ui.xml | sort -u | head -40
@@ -38,9 +38,12 @@ echo "== Screen after launch: $(screen_text)"
 
 before=$(saved_count)
 tap "Take photo" || true
-sleep 10
+sleep 3
+msg=$(screen_text | grep -o 'Photo saved[^"]*\|Couldn.t save[^"]*' || echo none)
+sleep 7
 online=$(saved_count)
 echo "== Online capture: saved photos $before -> $online"
+echo "== Message after capture: $msg"
 echo "== Screen: $(screen_text)"
 
 adb shell svc wifi disable

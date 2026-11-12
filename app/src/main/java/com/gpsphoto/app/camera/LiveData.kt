@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import org.json.JSONObject
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
@@ -27,8 +28,7 @@ object MapSnapshot {
             for (tx in floor(left / TILE).toInt()..floor((left + size - 1) / TILE).toInt()) {
                 for (ty in floor(top / TILE).toInt()..floor((top + size - 1) / TILE).toInt()) {
                     if (ty !in 0 until tiles) continue
-                    val url = type.tileUrl.format(Locale.US, zoom, Math.floorMod(tx, tiles), ty)
-                    val tile = download(context, url) ?: return@runCatching null
+                    val tile = tile(context, type, zoom, Math.floorMod(tx, tiles), ty) ?: return@runCatching null
                     canvas.drawBitmap(tile, (tx * TILE - left).toFloat(), (ty * TILE - top).toFloat(), null)
                     tile.recycle()
                 }
@@ -36,13 +36,23 @@ object MapSnapshot {
             out
         }.getOrNull()
 
-    private fun download(context: Context, url: String): Bitmap? =
+    /** Tiles are kept on the phone, so places visited before still get a map when offline. */
+    private fun tile(context: Context, type: MapType, z: Int, x: Int, y: Int): Bitmap? {
+        val file = File(context.cacheDir, "stamp-tiles/${type.name}/$z/$x/$y.png")
+        if (file.exists()) BitmapFactory.decodeFile(file.path)?.let { return it }
+        val bytes = download(context, type.tileUrl.format(Locale.US, z, x, y)) ?: return null
+        file.parentFile?.mkdirs()
+        runCatching { file.writeBytes(bytes) }
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }
+
+    private fun download(context: Context, url: String): ByteArray? =
         (URL(url).openConnection() as HttpURLConnection).run {
             setRequestProperty("User-Agent", "${context.packageName}/1.0 (Android)")
             connectTimeout = 8_000
             readTimeout = 8_000
             try {
-                if (responseCode == 200) inputStream.use(BitmapFactory::decodeStream) else null
+                if (responseCode == 200) inputStream.use { it.readBytes() } else null
             } finally {
                 disconnect()
             }

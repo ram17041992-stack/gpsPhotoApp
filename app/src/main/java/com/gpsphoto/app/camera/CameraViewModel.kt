@@ -16,8 +16,10 @@ import androidx.lifecycle.viewModelScope
 import com.gpsphoto.app.data.PhotoDatabase
 import com.gpsphoto.app.data.PhotoFiles
 import com.gpsphoto.app.data.SavedPlace
+import com.gpsphoto.app.data.distanceM
 import com.gpsphoto.app.data.nearestPlace
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +31,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
 /** What the camera currently knows about where the phone is. */
@@ -137,7 +140,16 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         val now = System.currentTimeMillis()
         if (place.due(loc, now)) {
             place.start(loc, now)
-            launchIo { lookUpAddress(loc)?.let { (name, line) -> info.update { it.copy(place = name, addressLine = line) }; place.succeeded = true } }
+            launchIo {
+                val found = lookUpAddress(loc)
+                if (found != null) {
+                    info.update { it.copy(place = found.first, addressLine = found.second) }
+                    place.succeeded = true
+                } else if (info.value.place == null) {
+                    // Offline: reuse the place name of an earlier photo taken nearby (retried online later).
+                    nearbyKnownPlace(loc)?.let { name -> info.update { it.copy(place = name) } }
+                }
+            }
         }
         if (s.template == Template.ADVANCED && map.due(loc, now)) {
             map.start(loc, now)
@@ -156,6 +168,14 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun launchIo(block: suspend () -> Unit) { viewModelScope.launch(Dispatchers.IO) { block() } }
 
+    private suspend fun nearbyKnownPlace(loc: Location): String? {
+        val d = 0.002 // ~200 m box; the exact distance is checked below
+        return dao.namedPhotosIn(loc.latitude - d, loc.latitude + d, loc.longitude - d, loc.longitude + d)
+            .map { it to distanceM(loc.latitude, loc.longitude, it.lat, it.lng) }
+            .filter { it.second <= 200 }
+            .minByOrNull { it.second }?.first?.placeName
+    }
+
     private fun lookUpAddress(loc: Location): Pair<String, String?>? {
         if (!Geocoder.isPresent()) return null
         val a = runCatching {
@@ -166,10 +186,23 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         return name.ifBlank { a.featureName ?: return null } to a.getAddressLine(0)
     }
 
-    /** Captures, stamps and saves. [onDone] runs on the main thread with true on success. */
+    /** Captures, stamps and saves. [onDone] runs once, on the main thread, with true on success. */
     fun capture(imageCapture: ImageCapture, onDone: (Boolean) -> Unit) {
         if (busy.value) return
         busy.value = true
+        val finished = AtomicBoolean(false)
+        fun finish(ok: Boolean) {
+            if (finished.compareAndSet(false, true)) {
+                busy.value = false
+                onDone(ok)
+            }
+        }
+        // Some phones' cameras never answer; don't leave the shutter locked.
+        viewModelScope.launch {
+            delay(20_000)
+            if (!finished.get()) Log.w(TAG, "Camera did not respond within 20 s")
+            finish(false)
+        }
         val takenAt = System.currentTimeMillis()
         val s = settings.value
         val snapshot = info.value
@@ -189,15 +222,13 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
                         Log.i(TAG, "Saved $name.jpg ${stamped.width}x${stamped.height}, GPS ${if (snapshot.location != null) "yes" else "no"}")
                         stamped.recycle()
                     }.onFailure { Log.e(TAG, "Saving photo failed", it) }.isSuccess
-                    busy.value = false
-                    withContext(Dispatchers.Main) { onDone(ok) }
+                    withContext(Dispatchers.Main) { finish(ok) }
                 }
             }
 
             override fun onError(exception: ImageCaptureException) {
                 Log.e(TAG, "Capture failed", exception)
-                busy.value = false
-                onDone(false)
+                finish(false)
             }
         })
     }

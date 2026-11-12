@@ -129,7 +129,14 @@ private fun AppRoot(vm: PhotoViewModel = viewModel()) {
         NavHost(nav, startDestination = CAMERA, modifier = Modifier.padding(padding)) {
             composable(CAMERA) {
                 CameraScreen(
-                    onSaved = { ok -> if (ok) vm.sync() else vm.messages.tryEmit("Couldn't save the photo. Please try again.") },
+                    onSaved = { ok ->
+                        if (ok) {
+                            vm.messages.tryEmit("Photo saved ✓  (Photos tab, and Gallery › GPS Camera)")
+                            vm.sync()
+                        } else {
+                            vm.messages.tryEmit("Couldn't save the photo. Please try again.")
+                        }
+                    },
                     onOpenPhoto = { nav.navigate("photo/$it") },
                     onOpenGallery = { nav.openTab(GALLERY) },
                 )
