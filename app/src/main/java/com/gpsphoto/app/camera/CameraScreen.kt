@@ -76,6 +76,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -311,7 +314,8 @@ fun CameraScreen(onSaved: (Boolean) -> Unit, onOpenPhoto: (Long) -> Unit, onOpen
                     .size(78.dp)
                     .clip(CircleShape)
                     .border(4.dp, Color.White, CircleShape)
-                    .clickable(enabled = hasCamera && !busy) {
+                    .semantics { contentDescription = "Take photo" }
+                    .clickable(enabled = hasCamera && !busy, role = Role.Button) {
                         scope.launch {
                             shutterFlash.snapTo(0.7f)
                             shutterFlash.animateTo(0f, tween(250))

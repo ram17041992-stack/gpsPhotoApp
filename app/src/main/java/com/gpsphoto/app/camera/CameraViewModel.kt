@@ -6,6 +6,7 @@ import android.graphics.Matrix
 import android.location.Geocoder
 import android.location.Location
 import android.net.Uri
+import android.util.Log
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
@@ -78,6 +79,8 @@ private class Refresher(private val meters: Float, private val maxAgeMs: Long) {
 
     fun reset() { at = null }
 }
+
+private const val TAG = "GpsCamera"
 
 class CameraViewModel(app: Application) : AndroidViewModel(app) {
     val settings = MutableStateFlow(StampSettingsStore.load(app))
@@ -184,13 +187,14 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
                         val stamped = StampRenderer.stamp(photo, content, s.template)
                         lastPhoto.value = PhotoFiles.saveCapture(context, stamped, "$name.jpg", snapshot.location, takenAt, s.note)
                         stamped.recycle()
-                    }.isSuccess
+                    }.onFailure { Log.e(TAG, "Saving photo failed", it) }.isSuccess
                     busy.value = false
                     withContext(Dispatchers.Main) { onDone(ok) }
                 }
             }
 
             override fun onError(exception: ImageCaptureException) {
+                Log.e(TAG, "Capture failed", exception)
                 busy.value = false
                 onDone(false)
             }
